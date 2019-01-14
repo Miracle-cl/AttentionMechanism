@@ -1,149 +1,131 @@
+from dataset import Lang, Fra2EngDatasets, paired_collate_fn
+from Models import EncoderRNN, LuongAttnDecoderRNN, Seq2Seq
+import Constants
+
+import time
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-from Models import EncoderRNN, LuongAttnDecoderRNN
-from masked_crossentropy_loss import *
-import random
+import pickle
 
-PAD_token = 0
-USE_CUDA = True
+def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, device, clip=5., batch_sz=Constants.batch_size):
+    print("There are {} batches in one epoch.".format( len(train_loader) ))
+    model.train()
+    train_loss = 0
+    log_loss_info = []
+    t0 = time.time()
+    for i, batch in enumerate(train_loader, 1):
+        src, src_lens, tgt, tgt_lens = batch
+        src = src.permute(1, 0).to(device)
+        tgt = tgt.permute(1, 0).to(device) # tgt without modified - cuda out of memory
+        optimizer.zero_grad() # here same as optimizer.zero_grad()
+        outputs = model(src, tgt, src_lens, tgt_lens)
+        loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+        optimizer.step()
+        train_loss += loss.item()
+        if i % 2 == 0:
+            # print loss info every 20 Iterations
+            log_str = "Epoch : {} , Iteration : {} , Time : {:.2f} , TrainLoss : {:.4f}".format(epoch, i, (time.time()-t0)/60., train_loss/i)
+            print(log_str)
+            log_loss_info.append(log_str)
+            t0 = time.time()
+            
+    train_loss = train_loss / len(train_loader)
+    # print(train_loss)
 
-def pad_seq(seq, max_length):
-    seq += [PAD_token for i in range(max_length - len(seq))]
-    return seq
+    model.eval()
+    eval_loss = 0
+    with torch.no_grad():
+        for i, batch in enumerate(test_loader, 1):
+            src, src_lens, tgt, tgt_lens = batch
+            src = src.permute(1, 0).to(device)
+            tgt = tgt.permute(1, 0).to(device)
+            outputs = model(src, tgt, src_lens, tgt_lens)
+            loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
+            eval_loss += loss.item()
+            # print('over')
+        eval_loss = eval_loss / len(test_loader)
+        # print(eval_loss)
 
-def random_batch(batch_size, filter_tokenize):
-    input_seqs = []
-    target_seqs = []
-
-    # Choose random pairs
-    for i in range(batch_size):
-        pa = random.choice(filter_tokenize)
-        input_seqs.append(pa[0])
-        target_seqs.append(pa[1])
-
-    # Zip into pairs, sort by length (descending), unzip
-    seq_pairs = sorted(zip(input_seqs, target_seqs), key=lambda p: len(p[0]), reverse=True)
-    input_seqs, target_seqs = zip(*seq_pairs)
-
-    # For input and target sequences, get array of lengths and pad with 0s to max length
-    input_lengths = [len(s) for s in input_seqs]
-    input_padded = [pad_seq(s, max(input_lengths)) for s in input_seqs]
-    target_lengths = [len(s) for s in target_seqs]
-    target_padded = [pad_seq(s, max(target_lengths)) for s in target_seqs]
-
-    # Turn padded arrays into (batch_size x max_len) tensors, transpose into (max_len x batch_size)
-    input_var = torch.LongTensor(input_padded).transpose(0, 1)
-    target_var = torch.LongTensor(target_padded).transpose(0, 1)
-
-    if USE_CUDA:
-        input_var = input_var.cuda()
-        target_var = target_var.cuda()
-
-    return input_var, input_lengths, target_var, target_lengths
-
-def train_batch(input_bs, input_lens, target_bs, target_lens, encoder, decoder,
-                encoder_optimizer, decoder_optimizer, clip=5.0):
-    encoder.train()
-    decoder.train()
-
-    # Zero gradients of both optimizers
-    encoder_optimizer.zero_grad()
-    decoder_optimizer.zero_grad()
-
-    encoder_outputs, encoder_hidden = encoder(input_bs, input_lens)
-
-    # Prepare decoder input and outputs
-    batch_size = input_bs.size(1)
-    max_target_length = max(target_lens)
-    decoder_input = torch.LongTensor([SOS_token] * batch_size)
-    decoder_hidden = encoder_hidden[:decoder.n_layers] # Use last (forward) hidden state from encoder
-    all_decoder_outputs = torch.zeros(max_target_length, batch_size, decoder.output_size)
-
-    if USE_CUDA:
-        all_decoder_outputs = all_decoder_outputs.cuda()
-        decoder_input = decoder_input.cuda()
-
-    # Run through decoder one time step at a time
-    for t in range(max_target_length):
-        decoder_output, decoder_hidden, decoder_attn = decoder(
-            decoder_input, decoder_hidden, encoder_outputs
-        ) # decoder_output - B x output_size
-        all_decoder_outputs[t] = decoder_output # Store this step's outputs
-        decoder_input = target_bs[t] # Next input is current target
-
-    # calculate loss
-    # Test masked cross entropy loss
-    loss = masked_cross_entropy(
-        all_decoder_outputs.transpose(0, 1).contiguous(),
-        target_bs.transpose(0, 1).contiguous(),
-        target_lens
-    )
-
-    loss.backward()
-
-    # Clip gradient norms
-    torch.nn.utils.clip_grad_norm_(encoder.parameters(), clip)
-    torch.nn.utils.clip_grad_norm_(decoder.parameters(), clip)
-
-    encoder_optimizer.step()
-    decoder_optimizer.step()
-
-    return loss.item()
+    return train_loss, eval_loss, log_loss_info
 
 def main():
-    # Configure models
-    attn_model = 'dot'
-    hidden_size = 500
-    n_layers = 2
-    dropout = 0.1
-    batch_size = 100
-
-    # Configure training/optimization
-    clip = 5.0
-    learning_rate = 0.0001
-    decoder_learning_ratio = 5.0
-    n_epochs = 10000
-    epoch = 0
-
     with open('result.pkl', 'rb') as pl:
         rd = pickle.load(pl)
 
     filter_tokenize = rd['token']
     fra_lang = rd['fra_lang']
     eng_lang = rd['eng_lang']
+    fra_token, eng_token = zip(*filter_tokenize)
 
-    # Initialize models
-    encoder = EncoderRNN(eng_lang.n_words, hidden_size, n_layers, dropout=dropout)
-    decoder = LuongAttnDecoderRNN(attn_model, hidden_size, fra_lang.n_words, n_layers, dropout=dropout)
+    train_loader = torch.utils.data.DataLoader(
+                        Fra2EngDatasets(fra_token[:130000], eng_token[:130000]),
+                        num_workers = 2,
+                        batch_size = Constants.batch_size,
+                        collate_fn = paired_collate_fn,
+                        shuffle = True,
+                        drop_last = True)
 
-    # Initialize optimizers and criterion
-    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=learning_rate * decoder_learning_ratio)
-    # criterion = nn.CrossEntropyLoss()
+    test_loader = torch.utils.data.DataLoader(
+                        Fra2EngDatasets(fra_token[130000:], eng_token[130000:]),
+                        num_workers = 2,
+                        batch_size = Constants.batch_size,
+                        collate_fn = paired_collate_fn,
+                        shuffle = True,
+                        drop_last = True)
 
-    # Move models to GPU
-    if USE_CUDA:
-        encoder.cuda()
-        decoder.cuda()
+    INPUT_DIM = fra_lang.n_words
+    OUTPUT_DIM = eng_lang.n_words
+    
+    ENC_EMBED_SIZE = 300
+    DEC_EMBED_SIZE = 300
+    
+    HIDDEN_SIZE = 256
 
-    # input_bs, input_lens, target_bs, target_lens = random_batch(batch_size, filter_tokenize)
-    # loss = train_batch(input_bs, input_lens, target_bs, target_lens, encoder, decoder,
-    #                    encoder_optimizer, decoder_optimizer, clip=5.0)
-    n_epochs = 1000
-    losses = []
+    ENC_DROPOUT = 0.5
+    DEC_DROPOUT = 0.5
+    
+    fra_embed_matrix = np.load('Fra_EmbeddingMatrix.npy')
+    eng_embed_matrix = np.load('Eng_EmbeddingMatrix.npy')
 
-    start = time.time()
-    for epoch in range(1, 1+n_epochs):
-        input_bs, input_lens, target_bs, target_lens = random_batch(batch_size, filter_tokenize)
-        loss = train_batch(input_bs, input_lens, target_bs, target_lens, encoder, decoder,
-                           encoder_optimizer, decoder_optimizer, clip=5.0)
-        losses.append(loss)
-        if epoch % 10 == 0:
-            used_time = time.time() - start
-            print("Epoch : {} , Time : {} , Loss : {}".format(epoch, used_time, loss))
-            start = time.time()
+    # device = torch.device("cuda:0")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    encoder = EncoderRNN(INPUT_DIM, ENC_EMBED_SIZE, HIDDEN_SIZE, weights=fra_embed_matrix, n_layers=2, dropout=ENC_DROPOUT)
+    decoder = LuongAttnDecoderRNN('general', DEC_EMBED_SIZE, HIDDEN_SIZE, OUTPUT_DIM, device, weights=eng_embed_matrix, n_layers=1, dropout=DEC_DROPOUT)
+    s2s_model = Seq2Seq(encoder, decoder, device)
+    
+    #     if torch.cuda.device_count() > 1:
+    #         print("Let's use", torch.cuda.device_count(), "GPUs!")
+    #         s2s_model = nn.DataParallel(s2s_model)
+    s2s_model.to(device)
+        
+    optimizer = torch.optim.Adam(s2s_model.parameters())
+    # nn.CrossEntropyLoss combines nn.LogSoftmax() and nn.NLLLoss() in one single class
+    # criterion = nn.CrossEntropyLoss(ignore_index=0) # PAD_token = 0
+    criterion = nn.NLLLoss(ignore_index=0)
+
+    n_epochs = Constants.n_epochs
+    best_eval_loss = float('inf')
+    MODEL_SAVE_PATH = 's2s_luong_attn_0113.pt'
+    log_info = []
+    for epoch in range(1, n_epochs + 1):
+        start = time.time()
+        trainloss, evalloss, log_loss_info = train_epoch(s2s_model, epoch, train_loader, test_loader, criterion, optimizer, device)
+        used_time = time.time() - start
+        log_str = ">> Epoch : {} , Time : {:.2f} , TrainLoss : {:.4f} , EvalLoss : {:.4f}\n\n".format(epoch, used_time/60., trainloss, evalloss)
+        log_loss_info.append(log_str)
+        log_info += log_loss_info
+        print(log_str)
+        if evalloss < best_eval_loss:
+            best_eval_loss = evalloss
+            torch.save(s2s_model.state_dict(), MODEL_SAVE_PATH)
+
+    with open('log_info_0113.txt', 'w') as wrf:
+        for item in log_info:
+            wrf.write(item)
+            wrf.write('\n')
 
 if __name__ == "__main__":
     main()

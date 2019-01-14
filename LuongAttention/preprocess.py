@@ -6,8 +6,10 @@ import re
 import pickle
 from collections import Counter
 import numpy as np
+import Constants
+from dataset import Lang
 
-device = torch.device("cuda:0")
+# device = torch.device("cuda:0")
 # Turn a Unicode string to plain ASCII, thanks to http://stackoverflow.com/a/518232/2809427
 def unicode_to_ascii(s):
     return ''.join(
@@ -23,33 +25,10 @@ def normalize_string(s):
     s = re.sub(r"\s+", r" ", s).strip()
     return s
 
-class Lang():
-    def __init__(self, sents, name, min_count=30):
-        self.name = name
-        self.sents = sents
-        self.min_count = min_count
-        self.word2idx = {"<PAD>": 0, "<SOS>": 1, "<EOS>": 2}
-        self.idx2word = {0: "<PAD>", 1: "<SOS>", 2: "<EOS>"}
-        self.n_words = self.process_sents()
-
-    def process_sents(self):
-        words = []
-        for sent in self.sents:
-            words += sent.split(' ')
-
-        cc = 3
-        counter = Counter(words)
-        for word, num in counter.items():
-            if num > self.min_count:
-                self.word2idx[word] = cc
-                self.idx2word[cc] = word
-                cc += 1
-        return cc
-
 def main():
-    MIN_LENGTH = 2
+    MIN_LENGTH = Constants.MIN_LENGTH
     # MAX_LENGTH = 25 # avg +- n * std
-    EOS_token = 2
+    EOS_token = Constants.EOS_token
 
     with open('../data/eng-fra.txt', 'r', encoding='utf-8') as f:
         lines = f.read().strip().split('\n')
