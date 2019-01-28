@@ -7,7 +7,6 @@ import pickle
 from collections import Counter
 import numpy as np
 
-device = torch.device("cuda:0")
 # Turn a Unicode string to plain ASCII, thanks to http://stackoverflow.com/a/518232/2809427
 def unicode_to_ascii(s):
     return ''.join(
@@ -51,7 +50,7 @@ def main():
     # MAX_LENGTH = 25 # avg +- n * std
     EOS_token = 2
 
-    with open('../data/eng-fra.txt', 'r', encoding='utf-8') as f:
+    with open('../../data/eng-fra.txt', 'r', encoding='utf-8') as f:
         lines = f.read().strip().split('\n')
 
     pairs = []
@@ -76,7 +75,7 @@ def main():
 
     # fra_token, eng_token = zip(*filter_tokenize)
     result_dict = {'eng_lang': eng_lang, 'fra_lang': fra_lang, 'token': filter_tokenize}
-    with open('result.pkl', 'wb') as pl:
+    with open('../result.pkl', 'wb') as pl:
         pickle.dump(result_dict, pl)
 
 if __name__ == '__main__':

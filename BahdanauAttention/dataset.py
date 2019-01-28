@@ -1,13 +1,13 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
+from preprocess import Lang
 
 ## ============================== packing and padding ==============================
 ## ============================== length is needed ==============================
 def collate_fn(insts):
     # if seq_pad in class then all seqs with same length
     maxlen = max([len(x) for x in insts])
-    #maxlen = 24
     seq = np.array([x + [0] * (maxlen - len(x)) for x in insts])
     seq_lens = np.array([len(x) for x in insts])
     return torch.LongTensor(seq), torch.LongTensor(seq_lens)
@@ -22,7 +22,6 @@ def paired_collate_fn(insts):
 
 class Fra2EngDatasets(Dataset):
     def __init__(self, src, tgt):
-        # self.device = device
         self.src = src
         self.tgt = tgt
 

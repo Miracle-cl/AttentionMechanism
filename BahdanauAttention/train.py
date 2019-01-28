@@ -4,8 +4,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from preprocess import Lang
 from dataset import *
-from Models import *
+from BahdanauAttention import *
 
 
 def train_epoch_pack(model, epoch, train_loader, test_loader, criterion, optimizer, device):
@@ -41,7 +42,7 @@ def train_epoch_pack(model, epoch, train_loader, test_loader, criterion, optimiz
     return train_loss, eval_loss
 
 def main():
-    with open('result.pkl', 'rb') as pl:
+    with open('../result.pkl', 'rb') as pl:
         rd = pickle.load(pl)
 
     filter_tokenize = rd['token']
@@ -75,7 +76,7 @@ def main():
                         shuffle = True,
                         drop_last = True)
 
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:1')
     ba_attn = BahdanauAttention(ENC_HID_DIM, DEC_HID_DIM)
     enc = EncoderPack(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, 1, ENC_DROPOUT)
     dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, DEC_DROPOUT, ba_attn)
