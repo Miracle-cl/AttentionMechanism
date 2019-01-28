@@ -16,10 +16,11 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
     t0 = time.time()
     for i, batch in enumerate(train_loader, 1):
         src, src_lens, tgt, tgt_lens = batch
-        src = src.permute(1, 0).to(device)
-        tgt = tgt.permute(1, 0).to(device) # tgt without modified - cuda out of memory
+        max_tgt_len = torch.max(tgt_lens).item()
+        src = src.to(device)
+        tgt = tgt.to(device) # tgt without modified - cuda out of memory
         optimizer.zero_grad() # here same as optimizer.zero_grad()
-        outputs = model(src, tgt, src_lens, tgt_lens)
+        outputs = model(src, tgt, src_lens, tgt_lens, max_tgt_len)
         loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -27,7 +28,8 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
         train_loss += loss.item()
         if i % 2 == 0:
             # print loss info every 20 Iterations
-            log_str = "Epoch : {} , Iteration : {} , Time : {:.2f} , TrainLoss : {:.4f}".format(epoch, i, (time.time()-t0)/60., train_loss/i)
+            log_str = "Epoch : {} , Iteration : {} , Time : {:.2f} , TrainLoss : {:.4f}".format \
+                                (epoch, i, (time.time()-t0)/60., train_loss/i)
             print(log_str)
             log_loss_info.append(log_str)
             t0 = time.time()
@@ -40,9 +42,10 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
     with torch.no_grad():
         for i, batch in enumerate(test_loader, 1):
             src, src_lens, tgt, tgt_lens = batch
-            src = src.permute(1, 0).to(device)
-            tgt = tgt.permute(1, 0).to(device)
-            outputs = model(src, tgt, src_lens, tgt_lens)
+            max_tgt_len = torch.max(tgt_lens).item()
+            src = src.to(device)
+            tgt = tgt.to(device)
+            outputs = model(src, tgt, src_lens, tgt_lens, max_tgt_len)
             loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
             eval_loss += loss.item()
             # print('over')
@@ -51,7 +54,7 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
 
     return train_loss, eval_loss, log_loss_info
 
-def main():
+def main(multi_gpu = False):
     with open('result.pkl', 'rb') as pl:
         rd = pickle.load(pl)
 
@@ -89,17 +92,24 @@ def main():
     
     fra_embed_matrix = np.load('Fra_EmbeddingMatrix.npy')
     eng_embed_matrix = np.load('Eng_EmbeddingMatrix.npy')
-
-    # device = torch.device("cuda:0")
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    encoder = EncoderRNN(INPUT_DIM, ENC_EMBED_SIZE, HIDDEN_SIZE, weights=fra_embed_matrix, n_layers=2, dropout=ENC_DROPOUT)
-    decoder = LuongAttnDecoderRNN('general', DEC_EMBED_SIZE, HIDDEN_SIZE, OUTPUT_DIM, device, weights=eng_embed_matrix, n_layers=1, dropout=DEC_DROPOUT)
-    s2s_model = Seq2Seq(encoder, decoder, device)
     
-    #     if torch.cuda.device_count() > 1:
-    #         print("Let's use", torch.cuda.device_count(), "GPUs!")
-    #         s2s_model = nn.DataParallel(s2s_model)
-    s2s_model.to(device)
+    encoder = EncoderRNN(INPUT_DIM, ENC_EMBED_SIZE, HIDDEN_SIZE, weights=fra_embed_matrix, n_layers=2, dropout=ENC_DROPOUT)
+    # decoder = LuongAttnDecoderRNN('general', DEC_EMBED_SIZE, HIDDEN_SIZE, OUTPUT_DIM, device, 
+    #                               weights=eng_embed_matrix, n_layers=1, dropout=DEC_DROPOUT)
+    
+    if multi_gpu:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        decoder = LuongAttnDecoderRNN('general', DEC_EMBED_SIZE, HIDDEN_SIZE, OUTPUT_DIM, device, 
+                                      weights=eng_embed_matrix, n_layers=1, dropout=DEC_DROPOUT)
+        s2s_model = Seq2Seq(encoder, decoder, device)
+        s2s_model = nn.DataParallel(s2s_model, device_ids=[0, 1], dim=0)
+        s2s_model.to(device)
+    else:
+        device = torch.device("cuda:1")
+        decoder = LuongAttnDecoderRNN('general', DEC_EMBED_SIZE, HIDDEN_SIZE, OUTPUT_DIM, device, 
+                                      weights=eng_embed_matrix, n_layers=1, dropout=DEC_DROPOUT)
+        s2s_model = Seq2Seq(encoder, decoder, device)
+        s2s_model.to(device)
         
     optimizer = torch.optim.Adam(s2s_model.parameters())
     # nn.CrossEntropyLoss combines nn.LogSoftmax() and nn.NLLLoss() in one single class
@@ -108,7 +118,7 @@ def main():
 
     n_epochs = Constants.n_epochs
     best_eval_loss = float('inf')
-    MODEL_SAVE_PATH = 's2s_luong_attn_0113.pt'
+    MODEL_SAVE_PATH = 's2s_luong_attn_0127.pt'
     log_info = []
     for epoch in range(1, n_epochs + 1):
         start = time.time()
@@ -122,10 +132,10 @@ def main():
             best_eval_loss = evalloss
             torch.save(s2s_model.state_dict(), MODEL_SAVE_PATH)
 
-    with open('log_info_0113.txt', 'w') as wrf:
+    with open('log_info_0127.txt', 'w') as wrf:
         for item in log_info:
             wrf.write(item)
             wrf.write('\n')
 
 if __name__ == "__main__":
-    main()
+    main(multi_gpu = True)
