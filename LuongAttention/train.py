@@ -16,6 +16,7 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
     t0 = time.time()
     for i, batch in enumerate(train_loader, 1):
         src, src_lens, tgt, tgt_lens = batch
+        # calculate max tgt length - batches divided to 2 parts , if not they have the two different seq-lengths
         max_tgt_len = torch.max(tgt_lens).item()
         src = src.to(device)
         tgt = tgt.to(device) # tgt without modified - cuda out of memory
