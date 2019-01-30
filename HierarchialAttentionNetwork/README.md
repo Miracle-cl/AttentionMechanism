@@ -1,3 +1,3 @@
 #  Hierarchical Attention
 
-## Hierarchical Attention Networks for Document Classification
+Hierarchical Attention Networks for Document Classification
