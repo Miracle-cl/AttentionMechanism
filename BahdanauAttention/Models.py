@@ -45,13 +45,13 @@ class BahdanauAttention(nn.Module):
         return F.softmax(attention, dim=1)
 
 class Decoder(nn.Module):
-    def __init__(self, output_size, embed_size, enc_hs, dec_hs, dropout, Bahdanau_Attention):
+    def __init__(self, output_size, embed_size, enc_hs, dec_hs, dropout, bahdanau_attn):
         super(Decoder, self).__init__()
         self.embed_size = embed_size
         self.output_size = output_size
         self.embed = nn.Embedding(output_size, embed_size)
         self.dropout = nn.Dropout(dropout, inplace=False)
-        self.attn = Bahdanau_Attention
+        self.attn = bahdanau_attn
         self.gru = nn.GRU(embed_size + 2 * enc_hs, dec_hs)
         self.fc = nn.Linear(embed_size + 2 * enc_hs + dec_hs, output_size)
 
