@@ -1,3 +1,5 @@
 ## Bahdanau Attention
 
-### NEURAL MACHINE TRANSLATION BY JOINTLY LEARNING TO ALIGN AND TRANSLATE
+paper : NEURAL MACHINE TRANSLATION BY JOINTLY LEARNING TO ALIGN AND TRANSLATE
+
+code reference : https://github.com/spro/practical-pytorch/tree/master/seq2seq-translation
