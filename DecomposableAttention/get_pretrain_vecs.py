@@ -24,7 +24,7 @@ def load_glove_vec(fname, vocab):
 
 def main():
     dictionary = './data_snli.word.dict'
-    glove_path = '/data/charley/glove.840B.300d.txt'
+    glove_path = '/data/glove.840B.300d.txt'
     outputfile = './data_glove.hdf5'
     vocab = open(dictionary, "r").read().split("\n")[:-1]
     vocab = map(lambda x: (x.split()[0], int(x.split()[1])), vocab) #39079
