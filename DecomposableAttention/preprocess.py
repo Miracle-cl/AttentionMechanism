@@ -275,7 +275,7 @@ class Args():
         self.outputfile = './data_snli'
         self.vocabfile = ''
         self.shuffle = 1
-        self.glove = '/data/charley/glove.840B.300d.txt'
+        self.glove = '/data/glove.840B.300d.txt'
 
 if __name__ == '__main__':
     args = Args()
