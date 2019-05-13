@@ -103,6 +103,23 @@ class PositionwiseFeedForward(nn.Module):
         output = self.layer_norm(output + residual)
         return output
 
+class PositionwiseFeedForwardLinear(nn.Module):
+    ''' A two-feed-forward-layer module by nn.Linear'''
+
+    def __init__(self, d_in, d_hid, dropout=0.1):
+        super().__init__()
+        self.w_1 = nn.Linear(d_in, d_hid) # position-wise
+        self.w_2 = nn.Linear(d_hid, d_in) # position-wise
+        self.layer_norm = nn.LayerNorm(d_in)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        residual = x
+        output = self.dropout(F.relu(self.w_1(x)))
+        output = self.w_2(output)
+        output = self.layer_norm(output + residual)
+        return output
+
 class EncoderLayer(nn.Module):
     ''' Compose with two layers '''
 
