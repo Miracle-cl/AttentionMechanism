@@ -22,7 +22,7 @@ def train_epoch_pack(model, epoch, train_loader, test_loader, criterion, optimiz
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
         optimizer.step()
-        train_loss += loss.item()
+        train_loss += loss.item() / tgt.size(0) # print_loss is not very accurate
     train_loss = train_loss / len(train_loader)
     # print(train_loss)
 
@@ -35,7 +35,7 @@ def train_epoch_pack(model, epoch, train_loader, test_loader, criterion, optimiz
             tgt = tgt.permute(1, 0).to(device)
             outputs = model(src, tgt, src_lens)
             loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
-            eval_loss += loss.item()
+            eval_loss += loss.item() / tgt.size(0)
         eval_loss = eval_loss / len(test_loader)
         # print(eval_loss)
 

@@ -26,7 +26,7 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
-        train_loss += loss.item()
+        train_loss += loss.item() / tgt_lens.sum().item() # loss.item()
         if i % 2 == 0:
             # print loss info every 20 Iterations
             log_str = "Epoch : {} , Iteration : {} , Time : {:.2f} , TrainLoss : {:.4f}".format \
@@ -48,7 +48,7 @@ def train_epoch(model, epoch, train_loader, test_loader, criterion, optimizer, d
             tgt = tgt.to(device)
             outputs = model(src, tgt, src_lens, tgt_lens, max_tgt_len)
             loss = criterion(outputs.view(-1, outputs.size(2)), tgt.view(-1))
-            eval_loss += loss.item()
+            eval_loss += loss.item() / tgt_lens.sum().item() # loss.item()
             # print('over')
         eval_loss = eval_loss / len(test_loader)
         # print(eval_loss)
